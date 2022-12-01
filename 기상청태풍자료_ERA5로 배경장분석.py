@@ -16,8 +16,8 @@ from obspy.geodetics import kilometers2degrees
 
 #TS급이상만 추출(17m/s 이상)
 def KMI_data(idx):
-    if idx > 9:
-        return print("!! 태풍의 갯수 10개 !!")
+    if idx > 10:
+        return print("!! 태풍의 갯수 11개 !!")
     else: 
         print("!!! TS급(17m/s) 이상만 출력(3, 6시간 간격 data 혼합) !!!")
     with open("E:/CSL/힌남노랑 경로 유사한 태풍들_v2.txt", "r", encoding='UTF-8') as f:
@@ -61,11 +61,13 @@ def KMI_data(idx):
                     if data == "END\n":
                         break                                       
                     TC_info_line = data.split('\t')
+
                 tc.columns=['yr','mo','dy','hr','lon','lat','pres','spd']    
                 tc.insert(0, 'num', TC_number)      
                 tc.insert(0, 'idx', TCs)
                 tc.reset_index(drop=True, inplace=True)
-                TC_number = int(TC_info_line[0])    
+                if data != "END\n":   
+                    TC_number = int(TC_info_line[0])   
                 return tc[tc.spd >= 17].reset_index(drop=True)
             else:
                 while len(TC_info_line[0]) != 6 :
@@ -241,7 +243,7 @@ HadISST2(Hadley Centre Sea Ice and Sea Surface Temperature dataset) : Met Office
 # 7월1일 ~ 10월 31일
 
 
-total_tcs = 10
+total_tcs = 11
 '''
 202112	오마이스(OMAIS)	2021/08/20 21:00 ~ 2021/08/24 06:00
 201918	미탁(MITAG)	2019/09/28 09:00 ~ 2019/10/03 12:00
@@ -284,10 +286,15 @@ weak_jet_idx = np.argsort(mean_jet)[::-1][7:10]
 
 
 #태풍별로 변수데이터 계산
-sjd = int(datetime.datetime(1982, 7, 1).strftime("%j"))
+alpha_jd = int(datetime.datetime(1982, 7, 1).strftime("%j"))
 for i in range(total_tcs):
     tc = KMI_data(i)
     mid_idx = tc.lat[tc.lat == find_nearest(tc.lat, 28)].index[0] #28도에 가장 가까운 인덱스
+
+    start_yr = int(tc.yr.iloc[0])
+    start_mo = int(tc.mo.iloc[0])
+    start_dy = int(tc.dy.iloc[0])
+    start_hr = int(tc.hr.iloc[0][0:2])
 
     mid_yr = int(tc.yr.iloc[mid_idx])
     mid_mo = int(tc.mo.iloc[mid_idx])
@@ -299,40 +306,49 @@ for i in range(total_tcs):
     end_dy = int(tc.dy.iloc[-1])
     end_hr = int(tc.hr.iloc[-1][0:2])
 
+    sjd = int(datetime.datetime(start_yr, start_mo, start_dy).strftime("%j"))
     mjd = int(datetime.datetime(mid_yr, mid_mo, mid_dy).strftime("%j"))
     ejd = int(datetime.datetime(end_yr, end_mo, end_dy).strftime("%j"))
 
-    mid_date = ((mjd-sjd)*24) + mid_hr
-    ly_date = ((ejd-sjd)*24)  + end_hr
+    mid_date = ((mjd-alpha_jd)*24) + mid_hr
+    start_date = ((sjd-alpha_jd)*24) + start_hr
+    ly_date = ((ejd-alpha_jd)*24)  + end_hr
 
    
     #Pressure level data(time, level, latitude, longitude)
-    ncfile_pl = nc.Dataset("E:/CSL/ERA5/pressure_level/ERA5_"+str(mid_yr)+".nc", 'r') # 250hPa, 500hPa, 850hPa
-    u200 = ncfile_pl.variables['u'][mid_date:ly_date+1, 0, :, :] 
-    v200 = ncfile_pl.variables['v'][mid_date:ly_date+1, 0, :, :] 
-    div200 = ncfile_pl.variables['d'][mid_date:ly_date+1, 0, :, :] 
+    ncfile_pl = nc.Dataset("E:/CSL/ERA5/pressure_level/ERA5_"+str(start_yr)+".nc", 'r') # 250hPa, 500hPa, 850hPa
+    u200 = ncfile_pl.variables['u'][start_date:ly_date+1, 0, :, :] 
+    v200 = ncfile_pl.variables['v'][start_date:ly_date+1, 0, :, :] 
+    div200 = ncfile_pl.variables['d'][start_date:ly_date+1, 0, :, :] 
 
-    u850 = ncfile_pl.variables['u'][mid_date:ly_date+1, 2, :, :] 
-    v850 = ncfile_pl.variables['v'][mid_date:ly_date+1, 2, :, :] 
-    q850 = ncfile_pl.variables['q'][mid_date:ly_date+1, 2, :, :] #Specific humidity (kg kg-1)
-    vo850 = ncfile_pl.variables['vo'][mid_date:ly_date+1, 2, :, :] #Relative vorticity (s-1)
+    u850 = ncfile_pl.variables['u'][start_date:ly_date+1, 2, :, :] 
+    v850 = ncfile_pl.variables['v'][start_date:ly_date+1, 2, :, :] 
+    q850 = ncfile_pl.variables['q'][start_date:ly_date+1, 2, :, :] #Specific humidity (kg kg-1)
+    vo850 = ncfile_pl.variables['vo'][start_date:ly_date+1, 2, :, :] #Relative vorticity (s-1)
+    u850 = ncfile_pl.variables['u'][start_date:ly_date+1, 2, :, :] 
+    v850 = ncfile_pl.variables['v'][start_date:ly_date+1, 2, :, :] 
+    w500 = ncfile_pl.variables['w'][start_date:ly_date+1, 1, :, :] #Vertical velocity(Pa s-1)
 
     vws = ((u200-u850)**2 + (v200-v850)**2)**0.5
-
-    w500 = ncfile_pl.variables['w'][mid_date:ly_date+1, 1, :, :] #Vertical velocity(Pa s-1)
+    wspd850 = (u850**2 + v850**2)**0.5
 
 
     #Single level data
-    ncfil_sl = nc.Dataset("E:/CSL/ERA5/single_level/ERA5_single_level_"+str(mid_yr)+".nc", 'r')
-    u10 = ncfil_sl.variables['u10'][mid_date:ly_date+1, :, :]
-    v10 = ncfil_sl.variables['v10'][mid_date:ly_date+1, :, :]
-    slp = ncfil_sl.variables['msl'][mid_date:ly_date+1, :, :]*0.01 #Pa -> hPa
-    sst = ncfil_sl.variables['sst'][mid_date:ly_date+1, :, :]-273.15 # K -> Celsius
-    tp = ncfil_sl.variables['tp'][mid_date:ly_date+1, :, :] #Total precipitation (m)
+    ncfil_sl = nc.Dataset("E:/CSL/ERA5/single_level/ERA5_single_level_"+str(start_yr)+".nc", 'r')
+    ncfil_sl2 = nc.Dataset("E:/CSL/ERA5/single_level2/ERA5_single_level2_"+str(start_yr)+".nc", 'r')
+
+    u10 = ncfil_sl.variables['u10'][start_date:ly_date+1, :, :]
+    v10 = ncfil_sl.variables['v10'][start_date:ly_date+1, :, :]
+    u100 = ncfil_sl2.variables['u100'][start_date:ly_date+1, :, :]
+    v100 = ncfil_sl2.variables['v100'][start_date:ly_date+1, :, :]
+    slp = ncfil_sl.variables['msl'][start_date:ly_date+1, :, :]*0.01 #Pa -> hPa
+    sst = ncfil_sl.variables['sst'][start_date:ly_date+1, :, :]-273.15 # K -> Celsius
+    tp = ncfil_sl.variables['tp'][start_date:ly_date+1, :, :] #Total precipitation (m)
 
     wspd10 = (u10**2 + v10**2)**0.5
+    wspd100 = (u100**2 + v100**2)**0.5
 
-    varname = ['u200', 'v200', 'u850', 'v850', 'vws', 'sst', 'slp', 'tp', 'wspd10', 'q850', 'vo850', 'w500','div200']
+    varname = ['u200', 'v200', 'u850', 'v850', 'vws', 'sst', 'slp', 'tp', 'wspd10','wspd100','wspd850', 'q850', 'vo850', 'w500','div200']
     for k in range(len(varname)):
         globals()[varname[k]+'_'+str(i)] = eval(varname[k])
     
@@ -345,63 +361,55 @@ for k in range(len(varname)):
 
 
 
-
-
-
-
 #중위도~소멸까지, 1시간간격 변수값
 for idx in range(total_tcs):
     tc = KMI_data(idx)
 
-    start_idx = (int(datetime.datetime(int(tc.yr.iloc[0]), int(tc.mo.iloc[0]), int(tc.dy.iloc[0])).strftime("%j")) - sjd)*24 + int(tc.hr.iloc[0][0:2])
-    end_idx = (int(datetime.datetime(int(tc.yr.iloc[-1]), int(tc.mo.iloc[-1]), int(tc.dy.iloc[-1])).strftime("%j")) - sjd)*24 + int(tc.hr.iloc[-1][0:2])
+    start_idx = (int(datetime.datetime(int(tc.yr.iloc[0]), int(tc.mo.iloc[0]), int(tc.dy.iloc[0])).strftime("%j")) - alpha_jd)*24 + int(tc.hr.iloc[0][0:2])
+    end_idx = (int(datetime.datetime(int(tc.yr.iloc[-1]), int(tc.mo.iloc[-1]), int(tc.dy.iloc[-1])).strftime("%j")) - alpha_jd)*24 + int(tc.hr.iloc[-1][0:2])
 
     #1시간 간격으로 interpolate한 위경도
     interp_tclat = interp_method2(tc.lat, end_idx-start_idx+1) 
     interp_tclon = interp_method2(tc.lon, end_idx-start_idx+1)
-
+    #1시간 간격 interpolate한 베스트트랙 강도
+    globals()['interp_obs_tcspd_'+str(idx)] = interp_method2(tc.spd, end_idx-start_idx+1)
 
     for k in range(len(interp_tclat)):  
 
-        #강풍반경은 반경3도
+        #강풍반경은 반경7도
         lnlt_idx = []
         ln_idx = []
         lt_idx = []
-        #map_lon, map_lat 다돌지말고, 주변한 5도만 돌면 되잖아
+        #map_lon, map_lat 다돌지말고, 주변한 7도만 돌면 되잖아
         map_ln_idx = np.where(map_lon == find_nearest(map_lon, interp_tclon[k]))[0][0]
         map_lt_idx = np.where(map_lat == find_nearest(map_lat, interp_tclat[k]))[0][0]
 
         steps = map_lon[2] - map_lon[1] #격자 간격
-        around_degree = 3              #주변 몇도만 탐색?
+        around_degree = 7              #주변 몇도만 탐색?
         step_idx = int(around_degree/steps) # 몇도 탐색을 위한 인덱스 개수
 
 
         for lns, lts in itertools.product(range(map_ln_idx-step_idx, map_ln_idx+step_idx+1), range(map_lt_idx-step_idx, map_lt_idx+step_idx+1)):
             distance = GeoUtil.get_harversine_distance(interp_tclon[k],interp_tclat[k],map_lon[lns],map_lat[lts])
-            if distance <= 3:
+            if distance <= around_degree:
                 ln_idx.append(lns)     
                 lt_idx.append(lts)     
 
-
-    for p, ids in itertools.product(range(len(varname)), range(total_tcs)):
-        for h in range(np.shape(eval(varname[p]+'_'+str(ids)))[0]): #태풍별 중위도~소멸 timestep 개수
-            a=[]
-            a.append(eval(varname[p]+'_'+str(ids))[h, lt_idx, ln_idx])
-            eval('mean_'+varname[p]+'_'+str(ids))[h] = np.mean(a)
-            eval('max_'+varname[p]+'_'+str(ids))[h] = np.max(a)
+        for p in range(len(varname)):
+                eval('mean_'+varname[p]+'_'+str(idx))[k] = np.mean(eval(varname[p]+'_'+str(idx))[k, lt_idx, ln_idx])
+                eval('max_'+varname[p]+'_'+str(idx))[k] = np.max(eval(varname[p]+'_'+str(idx))[k, lt_idx, ln_idx])
 
 
 
-#mean_wspd10_n
-#max_wspd10_n
 
 
-idx=2
-tc = KMI_data(idx)
-mid_idx = tc.lat[tc.lat == find_nearest(tc.lat, 28)].index[0] #28도에 가장 가까운 인덱스
 
-plt.plot(tc.spd[mid_idx::], 'b')
-plt.plot(eval('max_wspd10_'+str(idx)) , 'r') 
+
+
+idx=7
+plt.plot(eval('interp_obs_tcspd_'+str(idx)), 'b')
+plt.plot(eval('max_wspd100_'+str(idx)) , 'r') 
+plt.plot(eval('max_wspd850_'+str(idx)) , ':r') 
 
 
 
@@ -414,21 +422,21 @@ plt.plot(eval('max_wspd10_'+str(idx)) , 'r')
 
 
 for i in range(len(strong_jet_idx)):
-    plt.plot( eval('max_wspd10_'+str(strong_jet_idx[i])) )
+    plt.plot( eval('max_wspd100_'+str(strong_jet_idx[i])) )
 
 for i in range(len(strong_jet_idx)):
     plt.plot( eval('mean_slp_'+str(strong_jet_idx[i])) )
 
 
 for i in range(len(mod_jet_idx)):
-    plt.plot( eval('max_wspd10_'+str(mod_jet_idx[i])) )
+    plt.plot( eval('max_wspd100_'+str(mod_jet_idx[i])) )
 
 for i in range(len(mod_jet_idx)):
     plt.plot( eval('mean_slp_'+str(mod_jet_idx[i])) )
 
 
 for i in range(len(weak_jet_idx)):
-    plt.plot( eval('max_wspd10_'+str(weak_jet_idx[i])) )
+    plt.plot( eval('max_wspd100_'+str(weak_jet_idx[i])) )
 
 for i in range(len(weak_jet_idx)):
     plt.plot( eval('mean_slp_'+str(weak_jet_idx[i])) )
